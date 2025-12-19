@@ -1,2 +1,2 @@
 # WarpProject
-Implementation miscellaneous fluid simulation solvers using Warp
+Implementation of miscellaneous fluid simulation solvers using Warp
