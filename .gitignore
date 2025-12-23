@@ -1,0 +1,40 @@
+# Warp Kernel Cache
+.cache/
+warp_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# C++/Build (Visual Studio, CMake)
+build/
+out/
+.vs/
+*.sln
+*.vcxproj
+*.user
+CMakeSettings.json
+CMakeUserPresets.json
+
+# Binary extensions
+*.so
+*.pyd
+*.dll
+*.lib
+
+# Simulation Outputs (High Volume)
+*.usd
+*.usda
+*.usdc
+*.obj
+*.vtk
+output/
+frames/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
