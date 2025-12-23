@@ -51,7 +51,7 @@ def run_visualization(sim: SimulationController3D):
         fargs=(img,),
         frames=100000,
         blit=True,
-        interval=16,  # ~60 FPS
+        interval=16,
         repeat=False
     )
     

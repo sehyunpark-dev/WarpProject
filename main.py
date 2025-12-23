@@ -10,8 +10,9 @@ if __name__ == "__main__":
     sim = SimulationController3D(
         solver_type=StableFluidSolver3D,
         domain_size=(1.0, 1.0, 1.0),
-        dx=1.0/256.0,
-        dt=0.01
+        dx=1.0/128.0,
+        dt=0.005,
+        p_iter=100,
     )
     
     # Run Visualization

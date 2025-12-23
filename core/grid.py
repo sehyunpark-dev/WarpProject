@@ -296,9 +296,7 @@ def compute_divergence(grid: MACGrid3D, i: int, j: int, k: int):
     w_back  = grid.w0[i, j, k]
     w_front = grid.w0[i, j, k+1]
     
-    div = (u_right - u_left) / grid.dx + \
-          (v_top - v_bottom) / grid.dx + \
-          (w_front - w_back) / grid.dx
+    div = ((u_right - u_left) + (v_top - v_bottom) + (w_front - w_back)) / grid.dx
 
     return div
 

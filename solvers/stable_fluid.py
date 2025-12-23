@@ -36,18 +36,27 @@ def apply_buoyancy_kernel(v: wp.array3d(dtype=float), smoke: wp.array3d(dtype=fl
     v[i, j, k] = v[i, j, k] + buoyancy * s_avg * dt
     
 @wp.kernel
-def source_smoke_kernel(smoke: wp.array3d(dtype=float), center: wp.vec3, radius: float, amount: float, dt: float):
+def source_smoke_kernel(
+    smoke: wp.array3d(dtype=float), center: wp.vec3, radius: float, height: float, amount: float, dx: float):
     i, j, k = wp.tid()
     
-    if i >= smoke.shape[0] or j >= smoke.shape[1] or k >= smoke.shape[2]:
-        return
-        
-    # Distance in grid cells
-    pos = wp.vec3(float(i), float(j), float(k))
-    d = wp.length(pos - center)
+    nx = smoke.shape[0]
+    ny = smoke.shape[1]
+    nz = smoke.shape[2]
     
-    if d < radius:
-        # Set smoke density to amount (emitter)
+    if i >= nx or j >= ny or k >= nz:
+        return
+    
+    # Cell center in world coordinates
+    px = (float(i) + 0.5) * dx
+    py = (float(j) + 0.5) * dx
+    pz = (float(k) + 0.5) * dx
+    
+    # Distance in XZ plane (cylinder)
+    dist_xz = wp.sqrt((px - center[0]) * (px - center[0]) + (pz - center[2]) * (pz - center[2]))
+    
+    # Check if within cylinder: radius in XZ, height in Y
+    if dist_xz < radius and wp.abs(py - center[1]) < height * 0.5:
         smoke[i, j, k] = amount
 
 #######################################################################
@@ -174,17 +183,12 @@ def pressure_solve_jacobi_kernel(grid: MACGrid3D, p_in: wp.array3d(dtype=float),
     # Get sum of neighbors
     neighbor_sum_p = compute_neighbor_pressure(grid, p_in, i, j, k)
     
-    # RHS = (∇⋅u * ρ/dt) * dx^2
-    # ∇⋅u is already computed
+    # Pressure Poisson equation: ∇²p = (ρ/dt) * ∇·u
+    # Discretization: (sum_neighbors - 6p) / dx² = (ρ/dt) * div
+    # Rearranging: p = (sum_neighbors - (ρ/dt) * div * dx²) / 6
+    
     div = grid.div[i, j, k]
-    
-    # p_new = (neighbor_sum_p - RHS) / 6.0
-    # ∇^2 p = ∇⋅u * ρ/dt
-    # (sum - 6p)/dx^2 = ∇⋅u * ρ/dt
-    # sum - 6p = div * rho/dt * dx^2
-    # 6p = sum - div * rho/dt * dx^2
-    
-    rhs = div * (grid.dx * grid.dx)
+    rhs = div * (rho / dt) * (grid.dx * grid.dx)
     p_out[i, j, k] = (neighbor_sum_p - rhs) / 6.0
 
 @wp.kernel
@@ -200,16 +204,11 @@ def projection_kernel(grid: MACGrid3D, dt: float, rho: float):
         # p is at cell centers. u is at face between i-1 and i.
         # grad_p_x = (p[i] - p[i-1]) / dx
         
-        # Boundary handling:
-        # If i=0, p[i-1] is outside. If i=nx, p[i] is outside.
-        # Standard MAC: p[-1] = p[0], p[nx] = p[nx-1] (Neumann)
-        # So we can use lookup_float which clamps indices.
-        
         p_curr = lookup_float(grid.p0, i, j, k)
         p_prev = lookup_float(grid.p0, i-1, j, k)
         
         grad_p = (p_curr - p_prev) / grid.dx
-        grid.u0[i, j, k] = grid.u0[i, j, k] - grad_p
+        grid.u0[i, j, k] = grid.u0[i, j, k] - (dt / rho) * grad_p
 
     # Handle v (nx, ny+1, nz)
     if i < grid.nx and j < grid.ny + 1 and k < grid.nz:
@@ -217,7 +216,7 @@ def projection_kernel(grid: MACGrid3D, dt: float, rho: float):
         p_prev = lookup_float(grid.p0, i, j-1, k)
         
         grad_p = (p_curr - p_prev) / grid.dx
-        grid.v0[i, j, k] = grid.v0[i, j, k] - grad_p
+        grid.v0[i, j, k] = grid.v0[i, j, k] - (dt / rho) * grad_p
 
     # Handle w (nx, ny, nz+1)
     if i < grid.nx and j < grid.ny and k < grid.nz + 1:
@@ -225,12 +224,48 @@ def projection_kernel(grid: MACGrid3D, dt: float, rho: float):
         p_prev = lookup_float(grid.p0, i, j, k-1)
         
         grad_p = (p_curr - p_prev) / grid.dx
-        grid.w0[i, j, k] = grid.w0[i, j, k] - grad_p
+        grid.w0[i, j, k] = grid.w0[i, j, k] - (dt / rho) * grad_p
+
+#######################################################################
+# Boundary Condition Kernels
+
+@wp.kernel
+def apply_velocity_bc_kernel(u: wp.array3d(dtype=float), v: wp.array3d(dtype=float),w: wp.array3d(dtype=float), nx: int, ny: int, nz: int):
+    """
+    Apply Neumann BC for velocity:
+    - No-penetration: Normal velocity = 0 at domain boundaries
+    - Free-slip: Tangential velocity unchanged (∂u/∂n = 0)
+    """
+    i, j, k = wp.tid()
+    
+    # u boundaries (u has shape nx+1, ny, nz)
+    # u[0, j, k] = 0 and u[nx, j, k] = 0 (no flow through x boundaries)
+    if j < ny and k < nz:
+        if i == 0:
+            u[0, j, k] = 0.0
+        if i == nx:
+            u[nx, j, k] = 0.0
+    
+    # v boundaries (v has shape nx, ny+1, nz)
+    # v[i, 0, k] = 0 and v[i, ny, k] = 0 (no flow through y boundaries)
+    if i < nx and k < nz:
+        if j == 0:
+            v[i, 0, k] = 0.0
+        if j == ny:
+            v[i, ny, k] = 0.0
+    
+    # w boundaries (w has shape nx, ny, nz+1)
+    # w[i, j, 0] = 0 and w[i, j, nz] = 0 (no flow through z boundaries)
+    if i < nx and j < ny:
+        if k == 0:
+            w[i, j, 0] = 0.0
+        if k == nz:
+            w[i, j, nz] = 0.0
 
 #######################################################################
 
 class StableFluidSolver3D(Solver):
-    def __init__(self, grid: MACGrid3D, dt: float, rho_0: float, nu: float, p_iter=50, buoyancy=100.0, **kwargs):
+    def __init__(self, grid: MACGrid3D, dt: float, rho_0: float, nu: float, p_iter=100, buoyancy=100.0, **kwargs):
         self.grid = grid
         self.dt = dt
         self.rho_0 = rho_0
@@ -238,45 +273,57 @@ class StableFluidSolver3D(Solver):
         self.p_iter = p_iter
         self.buoyancy = buoyancy
         
-        # Source settings
-        self.source_center = wp.vec3(float(grid.nx//2), 5.0, float(grid.nz//2))
-        self.source_radius = 5.0
+        # Source settings (world coordinates)
+        # Center of the circular source in XZ plane
+        self.source_center = wp.vec3(0.5, 0.05, 0.5)  # (x, y, z) in world units
+        self.source_radius = 0.05   # Radius in XZ plane (world units)
+        self.source_height = 0.05   # Height in Y direction (world units)
         self.source_amount = 1.0
 
     def step(self):
-        # 1. External Forces
-        # 1-1. Add Smoke Source
-        wp.launch(kernel=source_smoke_kernel, dim=self.grid.smoke0.shape, inputs=[self.grid.smoke0, self.source_center, self.source_radius, self.source_amount, self.dt])
+        bc_dim = (self.grid.nx + 1, self.grid.ny + 1, self.grid.nz + 1)
         
-        # 1-2. Apply Buoyancy (to v0)
-        wp.launch(kernel=apply_buoyancy_kernel, dim=self.grid.v0.shape, inputs=[self.grid.v0, self.grid.smoke0, self.buoyancy, self.dt])
-        
-        # 2. Advection
-        # 2-1. Advect Velocity
-        wp.launch(kernel=advect_u, dim=self.grid.u0.shape, inputs=[self.grid, self.dt])
-        wp.launch(kernel=advect_v, dim=self.grid.v0.shape, inputs=[self.grid, self.dt])
-        wp.launch(kernel=advect_w, dim=self.grid.w0.shape, inputs=[self.grid, self.dt])
-        
-        # 2-2. Advect Scalars (Density & Smoke)
-        wp.launch(kernel=advect_scalar, dim=self.grid.smoke0.shape, inputs=[self.grid, self.grid.smoke0, self.grid.smoke1, self.dt])
-        
-        # Swap buffers (Advection)
-        (self.grid.u0, self.grid.u1) = (self.grid.u1, self.grid.u0)
-        (self.grid.v0, self.grid.v1) = (self.grid.v1, self.grid.v0)
-        (self.grid.w0, self.grid.w1) = (self.grid.w1, self.grid.w0)
-        (self.grid.smoke0, self.grid.smoke1) = (self.grid.smoke1, self.grid.smoke0)
-        
-        # 3. Projection
-        # 3-1. Compute Divergence
-        wp.launch(kernel=compute_divergence_kernel, dim=self.grid.div.shape, inputs=[self.grid])
-        
-        # 3-2. Pressure Solve (Jacobi)
-        for _ in range(self.p_iter):
-            wp.launch(kernel=pressure_solve_jacobi_kernel, dim=self.grid.p0.shape, inputs=[self.grid, self.grid.p0, self.grid.p1, self.dt, self.rho_0])
-            # Swap pressure buffers
-            (self.grid.p0, self.grid.p1) = (self.grid.p1, self.grid.p0)
+        with wp.ScopedTimer("StableFluid Step", synchronize=True):
+            # 1. External Forces
+            # 1-1. Add Smoke Source (cylindrical source in world coordinates)
+            wp.launch(kernel=source_smoke_kernel, dim=self.grid.smoke0.shape, inputs=[self.grid.smoke0, self.source_center, self.source_radius, self.source_height, self.source_amount, self.grid.dx])
             
-        # 3-3. Subtract Gradient
-        max_dim = (self.grid.nx + 1, self.grid.ny + 1, self.grid.nz + 1)
-        wp.launch(kernel=projection_kernel, dim=max_dim, inputs=[self.grid, self.dt, self.rho_0])
-        
+            # 1-2. Apply Buoyancy (to v0)
+            wp.launch(kernel=apply_buoyancy_kernel, dim=self.grid.v0.shape, inputs=[self.grid.v0, self.grid.smoke0, self.buoyancy, self.dt])
+            
+            # 2. Advection
+            # 2-1. Advect Velocity (write to u1, v1, w1)
+            wp.launch(kernel=advect_u, dim=self.grid.u0.shape, inputs=[self.grid, self.dt])
+            wp.launch(kernel=advect_v, dim=self.grid.v0.shape, inputs=[self.grid, self.dt])
+            wp.launch(kernel=advect_w, dim=self.grid.w0.shape, inputs=[self.grid, self.dt])
+            
+            # 2-2. Advect Scalars (Smoke, write to smoke1)
+            wp.launch(kernel=advect_scalar, dim=self.grid.smoke0.shape, inputs=[self.grid, self.grid.smoke0, self.grid.smoke1, self.dt])
+            
+            # Swap buffers after advection
+            (self.grid.u0, self.grid.u1) = (self.grid.u1, self.grid.u0)
+            (self.grid.v0, self.grid.v1) = (self.grid.v1, self.grid.v0)
+            (self.grid.w0, self.grid.w1) = (self.grid.w1, self.grid.w0)
+            (self.grid.smoke0, self.grid.smoke1) = (self.grid.smoke1, self.grid.smoke0)
+            
+            # 2-3. Apply Velocity BC after advection
+            wp.launch(kernel=apply_velocity_bc_kernel, dim=bc_dim, inputs=[self.grid.u0, self.grid.v0, self.grid.w0, self.grid.nx, self.grid.ny, self.grid.nz])
+            
+            # 3. Projection
+            # 3-1. Compute Divergence
+            wp.launch(kernel=compute_divergence_kernel, dim=self.grid.div.shape, inputs=[self.grid])
+            
+            # 3-2. Pressure Solve (Jacobi)
+            self.grid.p0.zero_()
+            self.grid.p1.zero_()
+            for _ in range(self.p_iter):
+                # Write to p1
+                wp.launch(kernel=pressure_solve_jacobi_kernel, dim=self.grid.p0.shape, inputs=[self.grid, self.grid.p0, self.grid.p1, self.dt, self.rho_0])
+                # Swap pressure buffers
+                (self.grid.p0, self.grid.p1) = (self.grid.p1, self.grid.p0)
+                
+            # 3-3. Subtract Gradient
+            wp.launch(kernel=projection_kernel, dim=bc_dim, inputs=[self.grid, self.dt, self.rho_0])
+            
+            # 3-4. Apply Velocity BC after projection
+            wp.launch(kernel=apply_velocity_bc_kernel, dim=bc_dim, inputs=[self.grid.u0, self.grid.v0, self.grid.w0, self.grid.nx, self.grid.ny, self.grid.nz])
