@@ -12,7 +12,8 @@ if __name__ == "__main__":
         domain_size=(1.0, 1.0, 1.0),
         dx=1.0/128.0,
         dt=0.001,
-        p_iter=100,
+        cfl_check=True,
+        p_iter=1000,
     )
     
     # Run Visualization

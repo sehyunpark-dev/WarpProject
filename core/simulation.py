@@ -10,21 +10,19 @@ class SimulationController3D:
                  dx=1.0/128.0,
                  dt=0.01,
                  rho_0=1.225,
-                 nu=1e-6,
-                 cfl=5.0,
-                 p_iter=50):
+                 cfl_check=True,
+                 p_iter=100):
         self.device = wp.get_device()
         
         self.dt = dt
         self.rho_0 = rho_0
-        self.nu = nu
-        self.cfl = cfl
+        self.cfl_check = cfl_check
         self.p_iter = p_iter
         
         self.grid = create_grid(domain_size=domain_size, dx=dx, device=self.device)
         self.nx, self.ny, self.nz = self.grid.nx, self.grid.ny, self.grid.nz
         
-        self.solver = solver_type(grid=self.grid, dt=self.dt, rho_0=self.rho_0, nu=self.nu, p_iter=self.p_iter)
+        self.solver = solver_type(grid=self.grid, dt=self.dt, rho_0=self.rho_0, cfl_check=self.cfl_check, p_iter=self.p_iter)
         
         print(f"Simulation Initialized on {self.device}")
         print(f"Grid Size: ({self.nx}, {self.ny}, {self.nz}), Domain: {domain_size}, dx: {dx}")

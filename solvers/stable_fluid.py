@@ -302,13 +302,13 @@ def apply_velocity_bc_kernel(u: wp.array3d(dtype=float), v: wp.array3d(dtype=flo
 #######################################################################
 
 class StableFluidSolver3D(Solver):
-    def __init__(self, grid: MACGrid3D, dt: float, rho_0: float, nu: float, p_iter=100, buoyancy=100.0, **kwargs):
+    def __init__(self, grid: MACGrid3D, dt: float, rho_0: float, cfl_check=True, p_iter=100, buoyancy=100.0,  **kwargs):
         self.grid = grid
         self.dt = dt
         self.rho_0 = rho_0
-        self.nu = nu
         self.p_iter = p_iter
         self.buoyancy = buoyancy
+        self.cfl_check = cfl_check
 
         # Source settings (world coordinates)
         # Center of the circular source in XZ plane
@@ -368,7 +368,8 @@ class StableFluidSolver3D(Solver):
             wp.launch(kernel=apply_velocity_bc_kernel, dim=bc_dim, inputs=[self.grid.u0, self.grid.v0, self.grid.w0, self.grid.nx, self.grid.ny, self.grid.nz])
 
         # Compute and print CFL number after the step
-        wp.launch(kernel=compute_cfl_kernel, dim=(self.grid.nx * self.grid.ny * self.grid.nz), inputs=[self.grid, self.dt, self.max_cfl])
-        current_cfl = self.max_cfl.numpy()[0]
-        self.max_cfl.zero_()
-        print(f"Max CFL Number: {current_cfl:.4f}")
+        if self.cfl_check:
+            wp.launch(kernel=compute_cfl_kernel, dim=(self.grid.nx * self.grid.ny * self.grid.nz), inputs=[self.grid, self.dt, self.max_cfl])
+            current_cfl = self.max_cfl.numpy()[0]
+            self.max_cfl.zero_()
+            print(f"Max CFL Number: {current_cfl:.4f}")
