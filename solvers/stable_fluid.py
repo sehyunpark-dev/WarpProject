@@ -227,6 +227,43 @@ def projection_kernel(grid: MACGrid3D, dt: float, rho: float):
         grid.w0[i, j, k] = grid.w0[i, j, k] - (dt / rho) * grad_p
 
 #######################################################################
+# CFL Number Computation Kernels
+
+@wp.kernel
+def compute_cfl_kernel(grid: MACGrid3D, dt: float, max_cfl: wp.array1d(dtype=float)):
+    """
+    Compute velocity magnitude at cell centers for CFL calculation.
+    Samples staggered velocity components and computes magnitude.
+    """
+    idx = wp.tid()
+
+    if idx >= grid.nx * grid.ny * grid.nz:
+        return
+
+    # Convert linear index to 3D coordinates
+    i = idx // (grid.ny * grid.nz)
+    j = (idx % (grid.ny * grid.nz)) // grid.nz
+    k = idx % grid.nz
+    dx = grid.dx
+
+    # Interpolate velocity components to cell center
+    # u is on x-faces, average from left and right
+    u_center = (grid.u0[i, j, k] + grid.u0[i+1, j, k]) * 0.5
+
+    # v is on y-faces, average from bottom and top
+    v_center = (grid.v0[i, j, k] + grid.v0[i, j+1, k]) * 0.5
+
+    # w is on z-faces, average from back and front
+    w_center = (grid.w0[i, j, k] + grid.w0[i, j, k+1]) * 0.5
+
+    # Compute magnitude
+    vel_mag = wp.length(wp.vec3(u_center, v_center, w_center))
+    local_cfl = vel_mag * dt / dx
+    
+    # Atomic max to find global maximum velocity magnitude
+    wp.atomic_max(max_cfl, 0, local_cfl)
+
+#######################################################################
 # Boundary Condition Kernels
 
 @wp.kernel
@@ -272,17 +309,19 @@ class StableFluidSolver3D(Solver):
         self.nu = nu
         self.p_iter = p_iter
         self.buoyancy = buoyancy
-        
+
         # Source settings (world coordinates)
         # Center of the circular source in XZ plane
         self.source_center = wp.vec3(0.5, 0.05, 0.5)  # (x, y, z) in world units
         self.source_radius = 0.05   # Radius in XZ plane (world units)
         self.source_height = 0.05   # Height in Y direction (world units)
         self.source_amount = 1.0
+        
+        self.max_cfl = wp.zeros(1, dtype=float)
 
     def step(self):
         bc_dim = (self.grid.nx + 1, self.grid.ny + 1, self.grid.nz + 1)
-        
+
         with wp.ScopedTimer("StableFluid Step", synchronize=True):
             # 1. External Forces
             # 1-1. Add Smoke Source (cylindrical source in world coordinates)
@@ -327,3 +366,9 @@ class StableFluidSolver3D(Solver):
             
             # 3-4. Apply Velocity BC after projection
             wp.launch(kernel=apply_velocity_bc_kernel, dim=bc_dim, inputs=[self.grid.u0, self.grid.v0, self.grid.w0, self.grid.nx, self.grid.ny, self.grid.nz])
+
+        # Compute and print CFL number after the step
+        wp.launch(kernel=compute_cfl_kernel, dim=(self.grid.nx * self.grid.ny * self.grid.nz), inputs=[self.grid, self.dt, self.max_cfl])
+        current_cfl = self.max_cfl.numpy()[0]
+        self.max_cfl.zero_()
+        print(f"Max CFL Number: {current_cfl:.4f}")
