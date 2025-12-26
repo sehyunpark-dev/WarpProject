@@ -13,7 +13,7 @@ def source_smoke_and_velocity_kernel(
     radius: float,
     height: float,
     smoke_amount: float,
-    source_velocity: float,
+    source_speed: float,
     dx: float,
     dt: float
 ):
@@ -47,8 +47,8 @@ def source_smoke_and_velocity_kernel(
         # v[i, j, k] is at the bottom face of cell (i, j, k)
         # v[i, j+1, k] is at the top face of cell (i, j, k)
         # We add velocity to both faces to inject upward momentum
-        v[i, j, k] = v[i, j, k] + source_velocity * dt
-        v[i, j + 1, k] = v[i, j + 1, k] + source_velocity * dt
+        v[i, j, k] = v[i, j, k] + source_speed * dt
+        v[i, j + 1, k] = v[i, j + 1, k] + source_speed * dt
 
 #######################################################################
 
@@ -175,8 +175,8 @@ def pressure_solve_jacobi_kernel(grid: MACGrid3D, p_in: wp.array3d(dtype=float),
     neighbor_sum_p = compute_neighbor_pressure(grid, p_in, i, j, k)
     
     # Pressure Poisson equation: ∇²p = (ρ/dt) * ∇·u
-    # Discretization: (sum_neighbors - 6p) / dx² = (ρ/dt) * div
-    # Rearranging: p = (sum_neighbors - (ρ/dt) * div * dx²) / 6
+    # Discretization: (sum_neighbors - 6p) / dx² = (ρ/dt) * ∇·u
+    # Rearranging: p = (sum_neighbors - (ρ/dt) * ∇·u * dx²) / 6
     
     div = grid.div[i, j, k]
     rhs = div * (rho / dt) * (grid.dx * grid.dx)
@@ -256,12 +256,12 @@ def apply_velocity_bc_kernel(u: wp.array3d(dtype=float), v: wp.array3d(dtype=flo
 #######################################################################
 
 class StableFluidSolver3D(Solver):
-    def __init__(self, grid: MACGrid3D, dt: float, rho_0: float, p_iter=100, source_velocity=100.0, **kwargs):
+    def __init__(self, grid: MACGrid3D, dt: float, rho_0: float, p_iter=100, source_speed=100.0, **kwargs):
         self.grid = grid
         self.dt = dt
         self.rho_0 = rho_0
         self.p_iter = p_iter
-        self.source_velocity = source_velocity  # Velocity injection at source (m/s)
+        self.source_speed = source_speed  # Velocity injection at source (m/s)
 
         # Source settings (world coordinates)
         # Center of the circular source in XZ plane
@@ -286,18 +286,19 @@ class StableFluidSolver3D(Solver):
                     self.source_radius,
                     self.source_height,
                     self.source_amount,
-                    self.source_velocity,
+                    self.source_speed,
                     self.grid.dx,
                     self.dt
                 ]
             )
+            # Apply Velocity BC after external forces
+            wp.launch(kernel=apply_velocity_bc_kernel, dim=bc_dim, inputs=[self.grid.u0, self.grid.v0, self.grid.w0, self.grid.nx, self.grid.ny, self.grid.nz])
             
             # 2. Advection
             # 2-1. Advect Velocity (write to u1, v1, w1)
             wp.launch(kernel=advect_u, dim=self.grid.u0.shape, inputs=[self.grid, self.dt])
             wp.launch(kernel=advect_v, dim=self.grid.v0.shape, inputs=[self.grid, self.dt])
             wp.launch(kernel=advect_w, dim=self.grid.w0.shape, inputs=[self.grid, self.dt])
-            
             # 2-2. Advect Scalars (Smoke, write to smoke1)
             wp.launch(kernel=advect_scalar, dim=self.grid.smoke0.shape, inputs=[self.grid, self.grid.smoke0, self.grid.smoke1, self.dt])
             
@@ -307,7 +308,7 @@ class StableFluidSolver3D(Solver):
             (self.grid.w0, self.grid.w1) = (self.grid.w1, self.grid.w0)
             (self.grid.smoke0, self.grid.smoke1) = (self.grid.smoke1, self.grid.smoke0)
             
-            # 2-3. Apply Velocity BC after advection
+            # Apply Velocity BC after advection
             wp.launch(kernel=apply_velocity_bc_kernel, dim=bc_dim, inputs=[self.grid.u0, self.grid.v0, self.grid.w0, self.grid.nx, self.grid.ny, self.grid.nz])
             
             # 3. Projection
