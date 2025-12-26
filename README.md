@@ -75,13 +75,13 @@ python main.py --dx 0.00390625 --dt 0.01 --p-iter 50
 
 #### Command Line Arguments
 
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `--cfl-check` | Enable CFL number checking | Disabled |
-| `--export` | Enable numpy frame export | Disabled |
-| `--dx` | Grid spacing | 1/256 |
-| `--dt` | Time step | 0.005 |
-| `--p-iter` | Pressure solver iterations | 100 |
+| Argument | Description |
+|----------|-------------|
+| `--cfl-check` | Enable CFL number checking |
+| `--export` | Enable numpy frame export |
+| `--dx` | Grid spacing |
+| `--dt` | Time step |
+| `--p-iter` | Pressure solver iterations |
 
 ### Volume Visualization
 
@@ -113,45 +113,3 @@ python -m core.volume_visualizer --folder outputs/numpy/YYMMDD_HHMMSS --animate 
 
 - **Space**: Play/Pause
 - **Q**: Quit
-
-## Algorithm
-
-### Stable Fluids Pipeline
-
-Each simulation step follows the classic Stable Fluids algorithm:
-
-1. **External Forces**: Inject smoke and velocity at source region
-2. **Advection**: Semi-Lagrangian advection for velocity and density
-3. **Projection**: Pressure solve (Jacobi iteration) to enforce incompressibility
-
-### Grid Structure
-
-The simulation uses a MAC (Marker-and-Cell) staggered grid:
-
-- **Cell Centers**: Pressure, smoke density, divergence
-- **Face Centers**: Velocity components (u, v, w)
-
-### Boundary Conditions
-
-- **Velocity**: No-penetration (normal = 0), free-slip (tangential unchanged)
-- **Pressure**: Neumann boundary conditions
-
-## Simulation Parameters
-
-### Source Configuration
-
-The smoke source is a cylinder at the bottom of the domain:
-
-- **Position**: Center at (0.5, 0.05, 0.5) in world units
-- **Radius**: 0.05 (XZ plane)
-- **Height**: 0.05 (Y direction)
-- **Velocity**: 100 m/s upward injection
-
-### Domain
-
-- **Size**: 1.0 x 1.0 x 1.0 (unit cube)
-- **Default Resolution**: 256 x 256 x 256 cells
-
-## License
-
-MIT License
