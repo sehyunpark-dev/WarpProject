@@ -31,10 +31,11 @@ CMakeUserPresets.json
 *.usdc
 *.obj
 *.vtk
-output/
+outputs/
 frames/
 
 # IDE & OS
 .vscode/
 .idea/
 .DS_Store
+.claude/

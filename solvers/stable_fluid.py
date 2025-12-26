@@ -1,5 +1,4 @@
 import warp as wp
-from core import grid
 from solvers.base_solver import Solver
 from core.grid import MACGrid3D, lookup_float, sample_float, sample_scalar, sample_velocity, sample_u, sample_v, sample_w, compute_divergence, compute_neighbor_pressure
 
@@ -7,57 +6,49 @@ from core.grid import MACGrid3D, lookup_float, sample_float, sample_scalar, samp
 # External Force Kernels
 
 @wp.kernel
-def apply_buoyancy_kernel(v: wp.array3d(dtype=float), smoke: wp.array3d(dtype=float), buoyancy: float, dt: float):
+def source_smoke_and_velocity_kernel(
+    smoke: wp.array3d(dtype=float),
+    v: wp.array3d(dtype=float),
+    center: wp.vec3,
+    radius: float,
+    height: float,
+    smoke_amount: float,
+    source_velocity: float,
+    dx: float,
+    dt: float
+):
+    """
+    Add smoke source and apply body force (velocity injection) only within the source region.
+    This kernel handles both smoke injection and velocity forcing in a single pass.
+    """
     i, j, k = wp.tid()
-    
-    # v shape: nx, ny+1, nz
-    nx = v.shape[0]
-    ny_face = v.shape[1]
-    nz = v.shape[2]
-    
-    if i >= nx or j >= ny_face or k >= nz:
-        return
-        
-    # v[i, j, k] is at face j. It sits between cell j-1 and cell j.
-    # We average smoke density from j-1 and j.
-    
-    # smoke is (nx, ny, nz)
-    # Clamp indices to valid cell range [0, ny-1]
-    idx_prev = wp.clamp(j-1, 0, ny_face-2)
-    idx_curr = wp.clamp(j, 0, ny_face-2)
-    
-    s_prev = smoke[i, idx_prev, k]
-    s_curr = smoke[i, idx_curr, k]
-    
-    s_avg = (s_prev + s_curr) * 0.5
-    
-    # Apply buoyancy force: F = buoyancy * smoke * up
-    # v_new = v_old + F * dt
-    v[i, j, k] = v[i, j, k] + buoyancy * s_avg * dt
-    
-@wp.kernel
-def source_smoke_kernel(
-    smoke: wp.array3d(dtype=float), center: wp.vec3, radius: float, height: float, amount: float, dx: float):
-    i, j, k = wp.tid()
-    
+
     nx = smoke.shape[0]
     ny = smoke.shape[1]
     nz = smoke.shape[2]
-    
+
     if i >= nx or j >= ny or k >= nz:
         return
-    
+
     # Cell center in world coordinates
     px = (float(i) + 0.5) * dx
     py = (float(j) + 0.5) * dx
     pz = (float(k) + 0.5) * dx
-    
+
     # Distance in XZ plane (cylinder)
     dist_xz = wp.sqrt((px - center[0]) * (px - center[0]) + (pz - center[2]) * (pz - center[2]))
-    
+
     # Check if within cylinder: radius in XZ, height in Y
     if dist_xz < radius and wp.abs(py - center[1]) < height * 0.5:
-        smoke[i, j, k] = amount
+        # Inject smoke
+        smoke[i, j, k] = smoke_amount
+
+        # Apply body force to v-faces adjacent to this cell
+        # v[i, j, k] is at the bottom face of cell (i, j, k)
+        # v[i, j+1, k] is at the top face of cell (i, j, k)
+        # We add velocity to both faces to inject upward momentum
+        v[i, j, k] = v[i, j, k] + source_velocity * dt
+        v[i, j + 1, k] = v[i, j + 1, k] + source_velocity * dt
 
 #######################################################################
 
@@ -227,43 +218,6 @@ def projection_kernel(grid: MACGrid3D, dt: float, rho: float):
         grid.w0[i, j, k] = grid.w0[i, j, k] - (dt / rho) * grad_p
 
 #######################################################################
-# CFL Number Computation Kernels
-
-@wp.kernel
-def compute_cfl_kernel(grid: MACGrid3D, dt: float, max_cfl: wp.array1d(dtype=float)):
-    """
-    Compute velocity magnitude at cell centers for CFL calculation.
-    Samples staggered velocity components and computes magnitude.
-    """
-    idx = wp.tid()
-
-    if idx >= grid.nx * grid.ny * grid.nz:
-        return
-
-    # Convert linear index to 3D coordinates
-    i = idx // (grid.ny * grid.nz)
-    j = (idx % (grid.ny * grid.nz)) // grid.nz
-    k = idx % grid.nz
-    dx = grid.dx
-
-    # Interpolate velocity components to cell center
-    # u is on x-faces, average from left and right
-    u_center = (grid.u0[i, j, k] + grid.u0[i+1, j, k]) * 0.5
-
-    # v is on y-faces, average from bottom and top
-    v_center = (grid.v0[i, j, k] + grid.v0[i, j+1, k]) * 0.5
-
-    # w is on z-faces, average from back and front
-    w_center = (grid.w0[i, j, k] + grid.w0[i, j, k+1]) * 0.5
-
-    # Compute magnitude
-    vel_mag = wp.length(wp.vec3(u_center, v_center, w_center))
-    local_cfl = vel_mag * dt / dx
-    
-    # Atomic max to find global maximum velocity magnitude
-    wp.atomic_max(max_cfl, 0, local_cfl)
-
-#######################################################################
 # Boundary Condition Kernels
 
 @wp.kernel
@@ -302,13 +256,12 @@ def apply_velocity_bc_kernel(u: wp.array3d(dtype=float), v: wp.array3d(dtype=flo
 #######################################################################
 
 class StableFluidSolver3D(Solver):
-    def __init__(self, grid: MACGrid3D, dt: float, rho_0: float, cfl_check=True, p_iter=100, buoyancy=100.0,  **kwargs):
+    def __init__(self, grid: MACGrid3D, dt: float, rho_0: float, p_iter=100, source_velocity=100.0, **kwargs):
         self.grid = grid
         self.dt = dt
         self.rho_0 = rho_0
         self.p_iter = p_iter
-        self.buoyancy = buoyancy
-        self.cfl_check = cfl_check
+        self.source_velocity = source_velocity  # Velocity injection at source (m/s)
 
         # Source settings (world coordinates)
         # Center of the circular source in XZ plane
@@ -316,19 +269,28 @@ class StableFluidSolver3D(Solver):
         self.source_radius = 0.05   # Radius in XZ plane (world units)
         self.source_height = 0.05   # Height in Y direction (world units)
         self.source_amount = 1.0
-        
-        self.max_cfl = wp.zeros(1, dtype=float)
 
     def step(self):
         bc_dim = (self.grid.nx + 1, self.grid.ny + 1, self.grid.nz + 1)
 
         with wp.ScopedTimer("StableFluid Step", synchronize=True):
             # 1. External Forces
-            # 1-1. Add Smoke Source (cylindrical source in world coordinates)
-            wp.launch(kernel=source_smoke_kernel, dim=self.grid.smoke0.shape, inputs=[self.grid.smoke0, self.source_center, self.source_radius, self.source_height, self.source_amount, self.grid.dx])
-            
-            # 1-2. Apply Buoyancy (to v0)
-            wp.launch(kernel=apply_buoyancy_kernel, dim=self.grid.v0.shape, inputs=[self.grid.v0, self.grid.smoke0, self.buoyancy, self.dt])
+            # Add smoke source and inject velocity (body force) only within the source region
+            wp.launch(
+                kernel=source_smoke_and_velocity_kernel,
+                dim=self.grid.smoke0.shape,
+                inputs=[
+                    self.grid.smoke0,
+                    self.grid.v0,
+                    self.source_center,
+                    self.source_radius,
+                    self.source_height,
+                    self.source_amount,
+                    self.source_velocity,
+                    self.grid.dx,
+                    self.dt
+                ]
+            )
             
             # 2. Advection
             # 2-1. Advect Velocity (write to u1, v1, w1)
@@ -366,10 +328,3 @@ class StableFluidSolver3D(Solver):
             
             # 3-4. Apply Velocity BC after projection
             wp.launch(kernel=apply_velocity_bc_kernel, dim=bc_dim, inputs=[self.grid.u0, self.grid.v0, self.grid.w0, self.grid.nx, self.grid.ny, self.grid.nz])
-
-        # Compute and print CFL number after the step
-        if self.cfl_check:
-            wp.launch(kernel=compute_cfl_kernel, dim=(self.grid.nx * self.grid.ny * self.grid.nz), inputs=[self.grid, self.dt, self.max_cfl])
-            current_cfl = self.max_cfl.numpy()[0]
-            self.max_cfl.zero_()
-            print(f"Max CFL Number: {current_cfl:.4f}")
