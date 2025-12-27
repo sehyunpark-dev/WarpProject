@@ -19,19 +19,23 @@ This project implements real-time fluid simulations based on the Stable Fluids a
 
 ```
 WarpProject/
-├── main.py                         # Entry point
+├── main.py                             # Entry point
 ├── core/
-│   ├── mac_grid_2d.py              # 2D MAC grid data structure and sampling functions
-│   ├── mac_grid_3d.py              # 3D MAC grid data structure and sampling functions
-│   ├── simulation_2d.py            # 2D simulation controller
-│   ├── simulation_3d.py            # 3D simulation controller
-│   ├── visualizer_2d.py            # 2D visualization (Matplotlib)
-│   ├── slice_visualizer_3d.py      # 3D slice visualization (Matplotlib)
-│   └── volume_visualizer.py        # 3D volume rendering (PyVista)
+│   ├── dim2d/                          # 2D simulation modules
+│   │   ├── mac_grid_2d.py              # 2D MAC grid data structure and sampling functions
+│   │   ├── simulation_2d.py            # 2D simulation controller
+│   │   └── visualizer_2d.py            # 2D visualization (Matplotlib)
+│   └── dim3d/                          # 3D simulation modules
+│       ├── mac_grid_3d.py              # 3D MAC grid data structure and sampling functions
+│       ├── simulation_3d.py            # 3D simulation controller
+│       ├── slice_visualizer_3d.py      # 3D slice visualization (Matplotlib)
+│       └── volume_visualizer.py        # 3D volume rendering (PyVista)
 ├── solvers/
-    ├── base_solver.py              # Solver interface
-    ├── stable_fluid_2d.py          # 2D Stable Fluids implementation
-    └── stable_fluid_3d.py          # 3D Stable Fluids implementation
+│   ├── base_solver.py                  # Solver interface
+│   ├── stable_fluid_2d.py              # 2D Stable Fluids implementation
+│   └── stable_fluid_3d.py              # 3D Stable Fluids implementation
+└── outputs/
+    └── numpy/                          # Exported simulation frames
 ```
 
 ## Requirements
@@ -96,13 +100,13 @@ After exporting frames with `--export`, use the volume visualizer:
 
 ```bash
 # Single frame
-python -m core.volume_visualizer --folder outputs/numpy/YYMMDD_HHMMSS --frame 50
+python -m core.dim3d.volume_visualizer --folder outputs/numpy/YYMMDD_HHMMSS --frame 50
 
 # Animation (all frames)
-python -m core.volume_visualizer --folder outputs/numpy/YYMMDD_HHMMSS --animate
+python -m core.dim3d.volume_visualizer --folder outputs/numpy/YYMMDD_HHMMSS --animate
 
 # Animation with frame range
-python -m core.volume_visualizer --folder outputs/numpy/YYMMDD_HHMMSS --animate --start 0 --end 100 --interval 50
+python -m core.dim3d.volume_visualizer --folder outputs/numpy/YYMMDD_HHMMSS --animate --start 0 --end 100 --interval 50
 ```
 
 #### Volume Visualizer Arguments

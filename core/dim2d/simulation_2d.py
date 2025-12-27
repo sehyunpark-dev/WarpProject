@@ -2,7 +2,7 @@ import warp as wp
 import numpy as np
 import os
 from datetime import datetime
-from core.mac_grid_2d import MACGrid2D, create_grid
+from core.dim2d.mac_grid_2d import MACGrid2D, create_grid
 from solvers.base_solver import Solver
 
 #######################################################################

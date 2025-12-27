@@ -1,6 +1,6 @@
 import warp as wp
 from solvers.base_solver import Solver
-from core.mac_grid_2d import MACGrid2D, lookup_float, sample_float, sample_scalar, sample_velocity, sample_u, sample_v, compute_divergence, compute_neighbor_pressure
+from core.dim2d.mac_grid_2d import MACGrid2D, lookup_float, sample_float, sample_scalar, sample_velocity, sample_u, sample_v, compute_divergence, compute_neighbor_pressure
 
 #######################################################################
 # External Force Kernels

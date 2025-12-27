@@ -1,11 +1,11 @@
 import argparse
 import warp as wp
-from core.simulation_3d import SimulationController3D
-from core.simulation_2d import SimulationController2D
+from core.dim3d.simulation_3d import SimulationController3D
+from core.dim2d.simulation_2d import SimulationController2D
 from solvers.stable_fluid_3d import StableFluidSolver3D
 from solvers.stable_fluid_2d import StableFluidSolver2D
-from core.slice_visualizer_3d import run_visualization as run_visualization_3d
-from core.visualizer_2d import run_visualization as run_visualization_2d
+from core.dim3d.slice_visualizer_3d import run_visualization as run_visualization_3d
+from core.dim2d.visualizer_2d import run_visualization as run_visualization_2d
 
 wp.init()
 

@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as anim
-from core.simulation_2d import SimulationController2D
+from core.dim2d.simulation_2d import SimulationController2D
 
 class Visualizer2D:
     def __init__(self, sim: SimulationController2D):
