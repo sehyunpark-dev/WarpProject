@@ -2,11 +2,42 @@ import warp as wp
 import numpy as np
 import os
 from datetime import datetime
+from dataclasses import dataclass
+from typing import List, Optional, TYPE_CHECKING
+
 from core.dim3d.mac_grid_3d import MACGrid3D, create_grid
 from solvers.base_solver import Solver
 
+if TYPE_CHECKING:
+    from scene_parser import SimulationConfig, Emitter, Mask, BoundaryCondition
+
+
+#######################################################################
+# Data Classes for GPU Data
+#######################################################################
+
+@dataclass
+class EmitterData3D:
+    """Emitter data prepared for GPU kernels"""
+    centers: Optional[wp.array] = None       # wp.vec3 array
+    radii: Optional[wp.array] = None         # float array (radius in XZ plane)
+    heights: Optional[wp.array] = None       # float array (height in Y direction)
+    velocities: Optional[wp.array] = None    # wp.vec3 array
+    smoke_amounts: Optional[wp.array] = None # float array
+    count: int = 0
+
+
+@dataclass
+class MaskData3D:
+    """Mask (obstacle) data prepared for GPU kernels"""
+    centers: Optional[wp.array] = None  # wp.vec3 array
+    radii: Optional[wp.array] = None    # float array
+    count: int = 0
+
+
 #######################################################################
 # CFL Number Computation Kernel
+#######################################################################
 
 @wp.kernel
 def compute_cfl_kernel(grid: MACGrid3D, dt: float, max_cfl: wp.array1d(dtype=float)):
@@ -37,30 +68,58 @@ def compute_cfl_kernel(grid: MACGrid3D, dt: float, max_cfl: wp.array1d(dtype=flo
     # Atomic max to find global maximum CFL
     wp.atomic_max(max_cfl, 0, local_cfl)
 
+
+#######################################################################
+# SimulationController3D
 #######################################################################
 
 class SimulationController3D:
     def __init__(self,
                  solver_type: type[Solver],
-                 domain_size=(1.0, 1.0, 1.0),
-                 dx=1.0/128.0,
-                 dt=0.01,
-                 rho_0=1.0,
-                 cfl_check=True,
-                 export=True,
-                 p_iter=100):
+                 config: "SimulationConfig"):
+        """
+        Initialize 3D simulation controller with scene configuration.
+
+        Args:
+            solver_type: Solver class to use (e.g., StableFluidSolver3D)
+            config: Parsed SimulationConfig from scene JSON file
+        """
         self.device = wp.get_device()
+        self.config = config
 
-        self.dt = dt
-        self.rho_0 = rho_0
-        self.cfl_check = cfl_check
-        self.export = export
-        self.p_iter = p_iter
+        # Extract settings from config
+        scene = config.scene
+        solver_cfg = config.solver
 
-        self.grid = create_grid(domain_size=domain_size, dx=dx, device=self.device)
+        self.dt = solver_cfg.dt
+        self.rho_0 = solver_cfg.rho
+        self.cfl_check = scene.cfl_check
+        self.export = scene.export
+        self.p_iter = solver_cfg.p_iter
+
+        # Create grid
+        self.grid = create_grid(
+            domain_size=scene.domain_size,
+            dx=scene.dx,
+            device=self.device
+        )
         self.nx, self.ny, self.nz = self.grid.nx, self.grid.ny, self.grid.nz
 
-        self.solver = solver_type(grid=self.grid, dt=self.dt, rho_0=self.rho_0, p_iter=self.p_iter)
+        # Prepare GPU data from config (Controller handles parsing)
+        emitter_data = self._prepare_emitters(config.emitters)
+        mask_data = self._prepare_masks(config.masks)
+        bc_flags = self._prepare_bc(scene.bc)
+
+        # Create solver with prepared GPU data
+        self.solver = solver_type(
+            grid=self.grid,
+            dt=self.dt,
+            rho_0=self.rho_0,
+            p_iter=self.p_iter,
+            emitter_data=emitter_data,
+            mask_data=mask_data,
+            bc_flags=bc_flags
+        )
 
         # CFL tracking
         self.max_cfl = wp.zeros(1, dtype=float)
@@ -69,19 +128,111 @@ class SimulationController3D:
         self.frame_count = 0
         if self.export:
             timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
-            self.output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs", "numpy", timestamp)
+            self.output_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "outputs", "numpy", timestamp
+            )
             os.makedirs(self.output_dir, exist_ok=True)
 
         print(f"Simulation Initialized on {self.device}")
-        print(f"Grid Size: ({self.nx}, {self.ny}, {self.nz}), Domain: {domain_size}, dx: {dx}")
+        print(f"Grid Size: ({self.nx}, {self.ny}, {self.nz}), Domain: {scene.domain_size}, dx: {scene.dx}")
+        print(f"Emitters: {emitter_data.count}, Masks: {mask_data.count}")
 
         # Initialize grid fields
         self.reset()
 
+    def _prepare_emitters(self, emitters: List["Emitter"]) -> EmitterData3D:
+        """Convert Emitter list to GPU arrays."""
+        n = len(emitters)
+        if n == 0:
+            return EmitterData3D()
+
+        centers = []
+        radii = []
+        heights = []
+        velocities = []
+        smoke_amounts = []
+
+        for e in emitters:
+            # Center position (x, y, z)
+            centers.append((e.center[0], e.center[1], e.center[2]))
+
+            # Handle different shapes
+            if e.shape == "sphere":
+                radii.append(e.params.get("radius", 0.05))
+                heights.append(e.params.get("radius", 0.05) * 2.0)  # diameter as height
+            elif e.shape == "cylinder":
+                radii.append(e.params.get("radius", 0.05))
+                heights.append(e.params.get("height", 0.05))
+            elif e.shape == "box":
+                w = e.params.get("width", 0.1)
+                h = e.params.get("height", 0.1)
+                d = e.params.get("depth", 0.1)
+                radii.append(min(w, d) / 2.0)  # approximate radius in XZ
+                heights.append(h)
+            else:
+                radii.append(0.05)
+                heights.append(0.05)
+
+            # Velocity (vx, vy, vz)
+            velocities.append((e.velocity[0], e.velocity[1], e.velocity[2]))
+            smoke_amounts.append(e.smoke_amount)
+
+        # Convert to wp arrays and return
+        return EmitterData3D(
+            centers=wp.array(centers, dtype=wp.vec3, device=self.device),
+            radii=wp.array(radii, dtype=float, device=self.device),
+            heights=wp.array(heights, dtype=float, device=self.device),
+            velocities=wp.array(velocities, dtype=wp.vec3, device=self.device),
+            smoke_amounts=wp.array(smoke_amounts, dtype=float, device=self.device),
+            count=n
+        )
+
+    def _prepare_masks(self, masks: List["Mask"]) -> MaskData3D:
+        """Convert Mask list to GPU arrays."""
+        n = len(masks)
+        if n == 0:
+            return MaskData3D()
+
+        centers = []
+        radii = []
+
+        for m in masks:
+            centers.append((m.center[0], m.center[1], m.center[2]))
+
+            if m.shape == "sphere":
+                radii.append(m.params.get("radius", 0.05))
+            elif m.shape == "cylinder":
+                radii.append(m.params.get("radius", 0.05))
+            elif m.shape == "box":
+                w = m.params.get("width", 0.1)
+                h = m.params.get("height", 0.1)
+                d = m.params.get("depth", 0.1)
+                radii.append(min(w, h, d) / 2.0)
+            else:
+                radii.append(0.05)
+
+        # Convert to wp arrays and return
+        return MaskData3D(
+            centers=wp.array(centers, dtype=wp.vec3, device=self.device),
+            radii=wp.array(radii, dtype=float, device=self.device),
+            count=n
+        )
+
+    def _prepare_bc(self, bc: "BoundaryCondition") -> dict:
+        """Convert boundary condition types to integer flags."""
+        bc_map = {"neumann": 0, "dirichlet": 1, "open": 2, "periodic": 3}
+        return {
+            "left": bc_map.get(bc.left, 0),
+            "right": bc_map.get(bc.right, 0),
+            "top": bc_map.get(bc.top, 0),
+            "bottom": bc_map.get(bc.bottom, 0),
+            "front": bc_map.get(bc.front, 0),
+            "back": bc_map.get(bc.back, 0),
+        }
+
     def step(self):
-        """
-        Forwards the simulation by one time step.
-        """
+        """Advance the simulation by one time step."""
         self.solver.step()
 
         # CFL check
@@ -101,9 +252,7 @@ class SimulationController3D:
             self.frame_count += 1
 
     def reset(self):
-        """
-        Resets the simulation grid to initial conditions.
-        """
+        """Reset the simulation grid to initial conditions."""
         self.grid.p0.zero_()
         self.grid.p1.zero_()
         self.grid.smoke0.zero_()
@@ -118,9 +267,7 @@ class SimulationController3D:
         self.grid.w1.zero_()
 
     def export_smoke_to_numpy(self, filename: str):
-        """
-        Export smoke density field to numpy .npy file.
-        """
+        """Export smoke density field to numpy .npy file."""
         smoke_np = self.grid.smoke0.numpy()
         filepath = os.path.join(self.output_dir, filename)
         np.save(filepath, smoke_np)

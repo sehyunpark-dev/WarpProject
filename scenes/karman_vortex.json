@@ -2,7 +2,7 @@
     "scene": {
         "dimension": 2,
         "domain_size": [4.0, 1.0],
-        "dx": 0.005,
+        "dx": 0.01,
         "cfl_check": false,
         "export": false,
         "bc": {
@@ -23,11 +23,35 @@
 
     "emitters": [
         {
-            "name": "inlet",
+            "name": "inlet0",
             "shape": "rectangle",
-            "center": [0.1, 0.5],
-            "params": [0.05, 0.2],
-            "velocity": [100.0, 0.0],
+            "center": [0.5, 0.2],
+            "params": [0.05, 0.05],
+            "velocity": [1000.0, 0.0],
+            "smoke_amount": 1.0
+        },
+        {
+            "name": "inlet1",
+            "shape": "rectangle",
+            "center": [0.5, 0.4],
+            "params": [0.05, 0.05],
+            "velocity": [1000.0, 0.0],
+            "smoke_amount": 1.0
+        },
+        {
+            "name": "inlet2",
+            "shape": "rectangle",
+            "center": [0.5, 0.6],
+            "params": [0.05, 0.05],
+            "velocity": [1000.0, 0.0],
+            "smoke_amount": 1.0
+        },
+        {
+            "name": "inlet3",
+            "shape": "rectangle",
+            "center": [0.5, 0.8],
+            "params": [0.05, 0.05],
+            "velocity": [1000.0, 0.0],
             "smoke_amount": 1.0
         }
     ],
@@ -37,7 +61,7 @@
             "name": "cylinder_obstacle",
             "shape": "circle",
             "center": [1.0, 0.5],
-            "params": [0.1]
+            "params": [0.2]
         }
     ]
 }
