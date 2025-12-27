@@ -1,0 +1,36 @@
+{
+    "scene": {
+        "dimension": 2,
+        "domain_size": [1.0, 1.0],
+        "dx": 0.005,
+        "cfl_check": false,
+        "export": false,
+        "bc": {
+            "left": "neumann",
+            "right": "neumann",
+            "top": "neumann",
+            "bottom": "neumann"
+        }
+    },
+
+    "solver": {
+        "type": "stable_fluid",
+        "dt": 0.005,
+        "p_iter": 100,
+        "rho": 1.0,
+        "nu": 0.0
+    },
+
+    "emitters": [
+        {
+            "name": "bottom_smoke",
+            "shape": "circle",
+            "center": [0.5, 0.05],
+            "params": [0.05],
+            "velocity": [0.0, 100.0],
+            "smoke_amount": 1.0
+        }
+    ],
+
+    "masks": []
+}

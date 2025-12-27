@@ -43,7 +43,7 @@ class SimulationController2D:
                  domain_size=(1.0, 1.0),
                  dx=1.0/128.0,
                  dt=0.01,
-                 rho_0=1.225,
+                 rho_0=1.0,
                  cfl_check=True,
                  export=True,
                  p_iter=100):

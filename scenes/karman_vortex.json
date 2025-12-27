@@ -1,0 +1,43 @@
+{
+    "scene": {
+        "dimension": 2,
+        "domain_size": [4.0, 1.0],
+        "dx": 0.005,
+        "cfl_check": false,
+        "export": false,
+        "bc": {
+            "left": "open",
+            "right": "open",
+            "top": "neumann",
+            "bottom": "neumann"
+        }
+    },
+
+    "solver": {
+        "type": "stable_fluid",
+        "dt": 0.005,
+        "p_iter": 100,
+        "rho": 1.0,
+        "nu": 0.0
+    },
+
+    "emitters": [
+        {
+            "name": "inlet",
+            "shape": "rectangle",
+            "center": [0.1, 0.5],
+            "params": [0.05, 0.2],
+            "velocity": [100.0, 0.0],
+            "smoke_amount": 1.0
+        }
+    ],
+
+    "masks": [
+        {
+            "name": "cylinder_obstacle",
+            "shape": "circle",
+            "center": [1.0, 0.5],
+            "params": [0.1]
+        }
+    ]
+}
