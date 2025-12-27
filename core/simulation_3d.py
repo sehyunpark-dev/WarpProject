@@ -2,7 +2,7 @@ import warp as wp
 import numpy as np
 import os
 from datetime import datetime
-from core.grid import MACGrid3D, create_grid
+from core.mac_grid_3d import MACGrid3D, create_grid
 from solvers.base_solver import Solver
 
 #######################################################################
@@ -77,7 +77,7 @@ class SimulationController3D:
 
         # Initialize grid fields
         self.reset()
-    
+
     def step(self):
         """
         Forwards the simulation by one time step.
@@ -99,18 +99,17 @@ class SimulationController3D:
         if self.export:
             self.export_smoke_to_numpy(f"smoke_frame_{self.frame_count:05d}.npy")
             self.frame_count += 1
-        
+
     def reset(self):
         """
         Resets the simulation grid to initial conditions.
         """
-        
         self.grid.p0.zero_()
         self.grid.p1.zero_()
         self.grid.smoke0.zero_()
         self.grid.smoke1.zero_()
         self.grid.div.zero_()
-        
+
         self.grid.u0.zero_()
         self.grid.u1.zero_()
         self.grid.v0.zero_()

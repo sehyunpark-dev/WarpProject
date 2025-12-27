@@ -1,14 +1,24 @@
 import argparse
 import warp as wp
-from core.simulation import SimulationController3D
-from solvers.stable_fluid import StableFluidSolver3D
-from core.slice_visualizer import run_visualization
+from core.simulation_3d import SimulationController3D
+from core.simulation_2d import SimulationController2D
+from solvers.stable_fluid_3d import StableFluidSolver3D
+from solvers.stable_fluid_2d import StableFluidSolver2D
+from core.slice_visualizer_3d import run_visualization as run_visualization_3d
+from core.visualizer_2d import run_visualization as run_visualization_2d
 
 wp.init()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="3D Smoke Simulation")
+    parser = argparse.ArgumentParser(description="Smoke Simulation")
 
+    parser.add_argument(
+        "--dim",
+        type=int,
+        choices=[2, 3],
+        default=3,
+        help="Simulation dimension: 2 for 2D, 3 for 3D (default: 3)"
+    )
     parser.add_argument(
         "--cfl-check",
         action="store_true",
@@ -40,16 +50,27 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Initialize Simulation
-    sim = SimulationController3D(
-        solver_type=StableFluidSolver3D,
-        domain_size=(1.0, 1.0, 1.0),
-        dx=args.dx,
-        dt=args.dt,
-        cfl_check=args.cfl_check,
-        export=args.export,
-        p_iter=args.p_iter,
-    )
-
-    # Run Visualization
-    run_visualization(sim)
+    if args.dim == 3:
+        # 3D Simulation
+        sim = SimulationController3D(
+            solver_type=StableFluidSolver3D,
+            domain_size=(1.0, 1.0, 1.0),
+            dx=args.dx,
+            dt=args.dt,
+            cfl_check=args.cfl_check,
+            export=args.export,
+            p_iter=args.p_iter,
+        )
+        run_visualization_3d(sim)
+    else:
+        # 2D Simulation
+        sim = SimulationController2D(
+            solver_type=StableFluidSolver2D,
+            domain_size=(1.0, 1.0),
+            dx=args.dx,
+            dt=args.dt,
+            cfl_check=args.cfl_check,
+            export=args.export,
+            p_iter=args.p_iter,
+        )
+        run_visualization_2d(sim)

@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as anim
-from core.simulation import SimulationController3D
+from core.simulation_3d import SimulationController3D
 
 class SliceVisualizer:
     def __init__(self, sim: SimulationController3D):

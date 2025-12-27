@@ -1,17 +1,17 @@
 # WarpProject
 
-GPU-accelerated 3D smoke simulation using [NVIDIA Warp](https://github.com/NVIDIA/warp).
+GPU-accelerated 2D/3D smoke simulation using [NVIDIA Warp](https://github.com/NVIDIA/warp).
 
 ## Overview
 
-This project implements a real-time 3D fluid simulation based on the Stable Fluids algorithm (Stam, 1999). The simulation runs entirely on the GPU using NVIDIA Warp, enabling high-resolution smoke simulations with interactive performance.
+This project implements real-time fluid simulations based on the Stable Fluids algorithm (Stam, 1999). The simulation runs entirely on the GPU using NVIDIA Warp, enabling high-resolution smoke simulations with interactive performance.
 
 ### Features
 
-- **3D Stable Fluid Solver**: Semi-Lagrangian advection with pressure projection
+- **2D & 3D Stable Fluid Solver**: Semi-Lagrangian advection with pressure projection
 - **MAC Grid**: Staggered grid (Marker-and-Cell) for accurate velocity representation
 - **GPU Acceleration**: All computations run on CUDA via NVIDIA Warp
-- **Real-time Visualization**: 2D slice viewer using Matplotlib
+- **Real-time Visualization**: 2D viewer and 3D slice viewer using Matplotlib
 - **Volume Rendering**: 3D visualization using PyVista
 - **Numpy Export**: Save simulation frames for post-processing
 
@@ -19,17 +19,19 @@ This project implements a real-time 3D fluid simulation based on the Stable Flui
 
 ```
 WarpProject/
-├── main.py                     # Entry point
+├── main.py                         # Entry point
 ├── core/
-│   ├── grid.py                 # MAC grid data structure and sampling functions
-│   ├── simulation.py           # Simulation controller
-│   ├── slice_visualizer.py     # 2D slice visualization (Matplotlib)
-│   └── volume_visualizer.py    # 3D volume rendering (PyVista)
+│   ├── mac_grid_2d.py              # 2D MAC grid data structure and sampling functions
+│   ├── mac_grid_3d.py              # 3D MAC grid data structure and sampling functions
+│   ├── simulation_2d.py            # 2D simulation controller
+│   ├── simulation_3d.py            # 3D simulation controller
+│   ├── visualizer_2d.py            # 2D visualization (Matplotlib)
+│   ├── slice_visualizer_3d.py      # 3D slice visualization (Matplotlib)
+│   └── volume_visualizer.py        # 3D volume rendering (PyVista)
 ├── solvers/
-│   ├── base_solver.py          # Solver interface
-│   └── stable_fluid.py         # Stable Fluids implementation
-└── outputs/
-    └── numpy/                  # Exported simulation frames
+    ├── base_solver.py              # Solver interface
+    ├── stable_fluid_2d.py          # 2D Stable Fluids implementation
+    └── stable_fluid_3d.py          # 3D Stable Fluids implementation
 ```
 
 ## Requirements
@@ -51,10 +53,14 @@ pip install warp-lang numpy matplotlib pyvista
 
 ### Running the Simulation
 
-Basic simulation with real-time 2D slice visualization:
+Basic simulation with real-time visualization:
 
 ```bash
+# 3D simulation (default)
 python main.py
+
+# 2D simulation
+python main.py --dim 2
 ```
 
 With optional flags:
@@ -66,24 +72,25 @@ python main.py --cfl-check
 # Enable numpy export for later visualization
 python main.py --export
 
-# Both options
-python main.py --cfl-check --export
+# 2D simulation with CFL check and export
+python main.py --dim 2 --cfl-check --export
 
 # Custom simulation parameters
 python main.py --dx 0.00390625 --dt 0.01 --p-iter 50
 ```
 
-#### Command Line Arguments
+### Command Line Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `--cfl-check` | Enable CFL number checking |
-| `--export` | Enable numpy frame export |
-| `--dx` | Grid spacing |
-| `--dt` | Time step |
-| `--p-iter` | Pressure solver iterations |
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--dim` | Simulation dimension (2 or 3) | 3 |
+| `--cfl-check` | Enable CFL number checking | Disabled |
+| `--export` | Enable numpy frame export | Disabled |
+| `--dx` | Grid spacing | 1/256 |
+| `--dt` | Time step | 0.005 |
+| `--p-iter` | Pressure solver iterations | 100 |
 
-### Volume Visualization
+### Volume Visualization (3D only)
 
 After exporting frames with `--export`, use the volume visualizer:
 

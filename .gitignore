@@ -39,3 +39,7 @@ frames/
 .idea/
 .DS_Store
 .claude/
+
+# Etc.
+TODO.md
+debug_boundary.py

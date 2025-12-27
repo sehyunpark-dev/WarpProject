@@ -6,7 +6,7 @@ Prints pressure gradient and velocity components at the top boundary.
 import warp as wp
 import numpy as np
 from core.simulation import SimulationController3D
-from solvers.stable_fluid import StableFluidSolver3D
+from solvers.stable_fluid_3d import StableFluidSolver3D
 
 wp.init()
 
