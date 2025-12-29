@@ -20,6 +20,7 @@ This project implements real-time fluid simulations based on the Stable Fluids a
 ```
 WarpProject/
 ├── main.py                             # Entry point
+├── scene_parser.py                     # JSON scene file parser
 ├── core/
 │   ├── dim2d/                          # 2D simulation modules
 │   │   ├── mac_grid_2d.py              # 2D MAC grid data structure and sampling functions
@@ -34,6 +35,10 @@ WarpProject/
 │   ├── base_solver.py                  # Solver interface
 │   ├── stable_fluid_2d.py              # 2D Stable Fluids implementation
 │   └── stable_fluid_3d.py              # 3D Stable Fluids implementation
+├── scenes/                             # Scene configuration files
+│   ├── basic_2d.json                   # Basic 2D smoke simulation
+│   ├── basic_3d.json                   # Basic 3D smoke simulation
+│   └── karman_vortex.json              # Karman vortex street example
 └── outputs/
     └── numpy/                          # Exported simulation frames
 ```
@@ -50,53 +55,123 @@ WarpProject/
 ### Installation
 
 ```bash
-pip install warp-lang numpy matplotlib pyvista
+pip install -r requirements.txt
 ```
 
 ## Usage
 
 ### Running the Simulation
 
-Basic simulation with real-time visualization:
+Simulations are configured using JSON scene files. Run a simulation by specifying a scene file:
 
 ```bash
-# 3D simulation (default)
-python main.py
+# Run 2D simulation
+python main.py --scene scenes/basic_2d.json
 
-# 2D simulation
-python main.py --dim 2
-```
-
-With optional flags:
-
-```bash
-# Enable CFL number checking
-python main.py --cfl-check
-
-# Enable numpy export for later visualization
-python main.py --export
-
-# 2D simulation with CFL check and export
-python main.py --dim 2 --cfl-check --export
-
-# Custom simulation parameters
-python main.py --dx 0.00390625 --dt 0.01 --p-iter 50
+# Run 3D simulation
+python main.py --scene scenes/basic_3d.json
 ```
 
 ### Command Line Arguments
 
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `--dim` | Simulation dimension (2 or 3) | 3 |
-| `--cfl-check` | Enable CFL number checking | Disabled |
-| `--export` | Enable numpy frame export | Disabled |
-| `--dx` | Grid spacing | 1/256 |
-| `--dt` | Time step | 0.005 |
-| `--p-iter` | Pressure solver iterations | 100 |
+| Argument | Description | Required |
+|----------|-------------|----------|
+| `--scene` | Path to scene JSON file | Yes |
+
+### Scene File Format
+
+Scene files are JSON files that define all simulation parameters. Example structure:
+
+```json
+{
+    "scene": {
+        "dimension": 2,
+        "domain_size": [1.0, 1.0],
+        "dx": 0.005,
+        "cfl_check": false,
+        "export": false,
+        "bc": {
+            "left": "neumann",
+            "right": "neumann",
+            "top": "neumann",
+            "bottom": "neumann"
+        }
+    },
+    "solver": {
+        "type": "stable_fluid",
+        "dt": 0.005,
+        "p_iter": 100,
+        "rho": 1.0,
+        "nu": 0.0
+    },
+    "emitters": [
+        {
+            "name": "bottom_smoke",
+            "shape": "circle",
+            "center": [0.5, 0.05],
+            "params": [0.05],
+            "velocity": [0.0, 1.0],
+            "smoke_amount": 1.0
+        }
+    ],
+    "masks": []
+}
+```
+
+### Scene Configuration Reference
+
+#### Scene Settings
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `dimension` | Simulation dimension (2 or 3) | 3 |
+| `domain_size` | Physical domain size in meters | [1.0, 1.0, 1.0] |
+| `dx` | Grid cell spacing | 0.01 |
+| `cfl_check` | Enable CFL number checking | false |
+| `export` | Enable numpy frame export | false |
+| `bc` | Boundary conditions (neumann, dirichlet, open, periodic) | neumann |
+
+#### Solver Settings
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `type` | Solver type | "stable_fluid" |
+| `dt` | Time step size (seconds) | 0.01 |
+| `p_iter` | Pressure solver iterations | 100 |
+| `rho` | Fluid density (kg/m³) | 1.0 |
+| `nu` | Kinematic viscosity (m²/s) | 0.0 |
+
+#### Emitter Settings
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique identifier |
+| `shape` | Shape type: circle, rectangle (2D) / sphere, box, cylinder (3D) |
+| `center` | Position in world coordinates |
+| `params` | Shape parameters (e.g., [radius] for circle, [radius, height] for cylinder) |
+| `velocity` | Velocity to inject |
+| `smoke_amount` | Smoke density (0.0 to 1.0) |
+
+#### Mask Settings (Obstacles)
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique identifier |
+| `shape` | Shape type (same as emitters) |
+| `center` | Position in world coordinates |
+| `params` | Shape parameters |
+
+### Testing Scene Parser
+
+You can test the scene parser directly:
+
+```bash
+python scene_parser.py scenes/basic_2d.json
+```
 
 ### Volume Visualization (3D only)
 
-After exporting frames with `--export`, use the volume visualizer:
+After exporting frames (set `"export": true` in scene file), use the volume visualizer:
 
 ```bash
 # Single frame
