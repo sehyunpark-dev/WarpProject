@@ -64,21 +64,21 @@ def apply_emitters_kernel(
             # Apply velocity to adjacent faces
             # u-faces (x velocity)
             if wp.abs(vel[0]) > 0.0:
-                u[i, j, k] = u[i, j, k] + vel[0] * dt
+                u[i, j, k] = vel[0]
                 if i + 1 < nx + 1:
-                    u[i + 1, j, k] = u[i + 1, j, k] + vel[0] * dt
+                    u[i + 1, j, k] = vel[0]
 
             # v-faces (y velocity)
             if wp.abs(vel[1]) > 0.0:
-                v[i, j, k] = v[i, j, k] + vel[1] * dt
+                v[i, j, k] = vel[1]
                 if j + 1 < ny + 1:
-                    v[i, j + 1, k] = v[i, j + 1, k] + vel[1] * dt
+                    v[i, j + 1, k] = vel[1]
 
             # w-faces (z velocity)
             if wp.abs(vel[2]) > 0.0:
-                w[i, j, k] = w[i, j, k] + vel[2] * dt
+                w[i, j, k] = vel[2]
                 if k + 1 < nz + 1:
-                    w[i, j, k + 1] = w[i, j, k + 1] + vel[2] * dt
+                    w[i, j, k + 1] = vel[2]
 
 
 @wp.kernel
