@@ -145,6 +145,29 @@ class Mask:
 
 
 @dataclass
+class InitialVelocity:
+    """
+    Configuration for initial velocity field regions.
+
+    Unlike emitters which continuously inject velocity every time step,
+    initial velocity regions only set velocity once at simulation start.
+    This is useful for setting up uniform background flow (e.g., for Kármán vortex).
+
+    Attributes:
+        name: Unique identifier for the initial velocity region
+        shape: Shape type ("circle", "rectangle", "sphere", "box", "cylinder")
+        center: Position of the region center in world coordinates
+        params: Shape-specific parameters (see SHAPE_SCHEMA)
+        velocity: Initial velocity to set [vx, vy] or [vx, vy, vz]
+    """
+    name: str
+    shape: str
+    center: Tuple[float, ...]
+    params: Dict[str, float]
+    velocity: Tuple[float, ...]
+
+
+@dataclass
 class SimulationConfig:
     """
     Complete simulation configuration parsed from a JSON scene file.
@@ -157,11 +180,13 @@ class SimulationConfig:
         solver: Solver parameters
         emitters: List of smoke/velocity sources
         masks: List of solid obstacles
+        initial_velocities: List of initial velocity regions (applied once at start)
     """
     scene: SceneConfig
     solver: SolverConfig
     emitters: List[Emitter] = field(default_factory=list)
     masks: List[Mask] = field(default_factory=list)
+    initial_velocities: List[InitialVelocity] = field(default_factory=list)
 
 
 # =============================================================================
@@ -355,6 +380,27 @@ class SceneParser:
             params = self._parse_params(shape, raw_params)
         )
 
+    def _parse_initial_velocity(self, iv_data: Dict[str, Any]) -> InitialVelocity:
+        """
+        Parse a single initial velocity region configuration.
+
+        Args:
+            iv_data: Dictionary containing initial velocity settings
+
+        Returns:
+            InitialVelocity dataclass instance
+        """
+        shape = iv_data.get("shape", "rectangle")
+        raw_params = iv_data.get("params", [])
+
+        return InitialVelocity(
+            name     = iv_data.get("name", "unnamed_initial_velocity"),
+            shape    = shape,
+            center   = tuple(iv_data.get("center", [0.0, 0.0])),
+            params   = self._parse_params(shape, raw_params),
+            velocity = tuple(iv_data.get("velocity", [0.0, 0.0]))
+        )
+
     def parse(self) -> SimulationConfig:
         """
         Parse the JSON scene file and return a complete simulation configuration.
@@ -394,11 +440,18 @@ class SceneParser:
             for m in self._raw_data.get("masks", [])
         ]
 
+        # Parse initial velocity regions list
+        initial_velocities = [
+            self._parse_initial_velocity(iv)
+            for iv in self._raw_data.get("initial_velocities", [])
+        ]
+
         return SimulationConfig(
             scene=scene,
             solver=solver,
             emitters=emitters,
-            masks=masks
+            masks=masks,
+            initial_velocities=initial_velocities
         )
 
     def get_raw_data(self) -> Dict[str, Any]:

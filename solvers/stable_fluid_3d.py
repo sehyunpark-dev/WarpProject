@@ -5,7 +5,7 @@ from solvers.base_solver import Solver
 from core.dim3d.mac_grid_3d import MACGrid3D, lookup_float, sample_float, sample_scalar, sample_velocity, sample_u, sample_v, sample_w, compute_divergence, compute_neighbor_pressure
 
 if TYPE_CHECKING:
-    from core.dim3d.simulation_3d import EmitterData3D, MaskData3D
+    from core.dim3d.simulation_3d import EmitterData3D, MaskData3D, InitialVelocityData3D
 
 
 #######################################################################
@@ -79,6 +79,78 @@ def apply_emitters_kernel(
                 w[i, j, k] = vel[2]
                 if k + 1 < nz + 1:
                     w[i, j, k + 1] = vel[2]
+
+
+@wp.kernel
+def apply_initial_velocity_kernel(
+    u: wp.array3d(dtype=float),
+    v: wp.array3d(dtype=float),
+    w: wp.array3d(dtype=float),
+    iv_centers: wp.array1d(dtype=wp.vec3),
+    iv_half_sizes: wp.array1d(dtype=wp.vec3),
+    iv_velocities: wp.array1d(dtype=wp.vec3),
+    num_regions: int,
+    nx: int,
+    ny: int,
+    nz: int,
+    dx: float
+):
+    """
+    Apply initial velocity to specified box regions.
+    Called once at simulation start (in reset()).
+    """
+    i, j, k = wp.tid()
+
+    # Process u-faces (shape: nx+1, ny, nz)
+    if i <= nx and j < ny and k < nz:
+        px_u = float(i) * dx
+        py_u = (float(j) + 0.5) * dx
+        pz_u = (float(k) + 0.5) * dx
+
+        for r in range(num_regions):
+            center = iv_centers[r]
+            half_size = iv_half_sizes[r]
+            vel = iv_velocities[r]
+
+            # Check if inside box
+            if (wp.abs(px_u - center[0]) < half_size[0] and
+                wp.abs(py_u - center[1]) < half_size[1] and
+                wp.abs(pz_u - center[2]) < half_size[2]):
+                u[i, j, k] = vel[0]
+
+    # Process v-faces (shape: nx, ny+1, nz)
+    if i < nx and j <= ny and k < nz:
+        px_v = (float(i) + 0.5) * dx
+        py_v = float(j) * dx
+        pz_v = (float(k) + 0.5) * dx
+
+        for r in range(num_regions):
+            center = iv_centers[r]
+            half_size = iv_half_sizes[r]
+            vel = iv_velocities[r]
+
+            # Check if inside box
+            if (wp.abs(px_v - center[0]) < half_size[0] and
+                wp.abs(py_v - center[1]) < half_size[1] and
+                wp.abs(pz_v - center[2]) < half_size[2]):
+                v[i, j, k] = vel[1]
+
+    # Process w-faces (shape: nx, ny, nz+1)
+    if i < nx and j < ny and k <= nz:
+        px_w = (float(i) + 0.5) * dx
+        py_w = (float(j) + 0.5) * dx
+        pz_w = float(k) * dx
+
+        for r in range(num_regions):
+            center = iv_centers[r]
+            half_size = iv_half_sizes[r]
+            vel = iv_velocities[r]
+
+            # Check if inside box
+            if (wp.abs(px_w - center[0]) < half_size[0] and
+                wp.abs(py_w - center[1]) < half_size[1] and
+                wp.abs(pz_w - center[2]) < half_size[2]):
+                w[i, j, k] = vel[2]
 
 
 @wp.kernel

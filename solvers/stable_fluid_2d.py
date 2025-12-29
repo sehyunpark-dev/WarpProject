@@ -5,7 +5,7 @@ from solvers.base_solver import Solver
 from core.dim2d.mac_grid_2d import MACGrid2D, lookup_float, sample_float, sample_scalar, sample_velocity, sample_u, sample_v, compute_divergence, compute_neighbor_pressure
 
 if TYPE_CHECKING:
-    from core.dim2d.simulation_2d import EmitterData2D, MaskData2D
+    from core.dim2d.simulation_2d import EmitterData2D, MaskData2D, InitialVelocityData2D
 
 
 #######################################################################
@@ -67,6 +67,55 @@ def apply_emitters_kernel(
                 v[i, j] = vel[1]
                 if j + 1 < ny + 1:
                     v[i, j + 1] = vel[1]
+
+
+@wp.kernel
+def apply_initial_velocity_kernel(
+    u: wp.array2d(dtype=float),
+    v: wp.array2d(dtype=float),
+    iv_centers: wp.array1d(dtype=wp.vec2),
+    iv_half_sizes: wp.array1d(dtype=wp.vec2),
+    iv_velocities: wp.array1d(dtype=wp.vec2),
+    num_regions: int,
+    nx: int,
+    ny: int,
+    dx: float
+):
+    """
+    Apply initial velocity to specified rectangular regions.
+    Called once at simulation start (in reset()).
+    """
+    i, j = wp.tid()
+
+    # Process u-faces (shape: nx+1, ny)
+    if i <= nx and j < ny:
+        px_u = float(i) * dx
+        py_u = (float(j) + 0.5) * dx
+
+        for r in range(num_regions):
+            center = iv_centers[r]
+            half_size = iv_half_sizes[r]
+            vel = iv_velocities[r]
+
+            # Check if inside rectangle
+            if (wp.abs(px_u - center[0]) < half_size[0] and
+                wp.abs(py_u - center[1]) < half_size[1]):
+                u[i, j] = vel[0]
+
+    # Process v-faces (shape: nx, ny+1)
+    if i < nx and j <= ny:
+        px_v = (float(i) + 0.5) * dx
+        py_v = float(j) * dx
+
+        for r in range(num_regions):
+            center = iv_centers[r]
+            half_size = iv_half_sizes[r]
+            vel = iv_velocities[r]
+
+            # Check if inside rectangle
+            if (wp.abs(px_v - center[0]) < half_size[0] and
+                wp.abs(py_v - center[1]) < half_size[1]):
+                v[i, j] = vel[1]
 
 
 @wp.kernel
